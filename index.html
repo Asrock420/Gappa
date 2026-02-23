@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Gappa Pro - Ultimate AI Messenger</title>
+    <title>Gappa Pro - Mobile Optimized</title>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getDatabase, ref, push, onChildAdded, onValue, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, push, onChildAdded, onValue, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
-        // Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyD0C-82DBnvvOIl5-gUe9g0yw2F8x3qIGQ",
             authDomain: "live-voice-translator-246d4.firebaseapp.com",
@@ -30,39 +29,15 @@
 
         let currentUser = null;
         let selectedFriend = null;
-        let timerInterval;
-        let seconds = 0;
-        let isRecording = false;
+        let timerInterval, seconds = 0;
 
-        // --- Authentication Logic ---
-        window.handleAuth = async () => {
-            const email = document.getElementById('email').value;
-            const pass = document.getElementById('pass').value;
-            const name = document.getElementById('name').value;
-            const isReg = document.getElementById('name-field').classList.contains('active');
-
-            try {
-                if (isReg) {
-                    const res = await createUserWithEmailAndPassword(auth, email, pass);
-                    await updateProfile(res.user, { displayName: name });
-                } else {
-                    await signInWithEmailAndPassword(auth, email, pass);
-                }
-            } catch (e) { alert(e.message); }
-        };
-
-        window.toggleReg = () => {
-            const nf = document.getElementById('name-field');
-            nf.classList.toggle('active');
-            document.getElementById('auth-btn').innerText = nf.classList.contains('active') ? 'Register' : 'Login';
-        };
-
+        // --- Auth Logic ---
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-container').style.display = 'flex';
-                set(ref(db, 'users/' + user.uid), { name: user.displayName || user.email, email: user.email, status: 'online' });
+                set(ref(db, 'users/' + user.uid), { name: user.displayName || user.email, email: user.email });
                 loadUsers();
             } else {
                 document.getElementById('auth-screen').style.display = 'flex';
@@ -70,7 +45,6 @@
             }
         });
 
-        // --- User List ---
         function loadUsers() {
             onValue(ref(db, 'users'), (snapshot) => {
                 const list = document.getElementById('sidebar-list');
@@ -88,188 +62,137 @@
             });
         }
 
-        // --- Private Chat & Messaging ---
-        function startChat(friend, friendUID) {
-            selectedFriend = { ...friend, uid: friendUID };
+        // --- Chat & Voice Logic ---
+        function startChat(friend, fUID) {
+            selectedFriend = { ...friend, uid: fUID };
             document.getElementById('chat-header-name').innerText = friend.name;
+            
+            // Mobile view toggle
+            if (window.innerWidth <= 600) {
+                document.getElementById('sidebar').style.display = 'none';
+                document.getElementById('chat-area').style.display = 'flex';
+            }
+            
             document.getElementById('placeholder').style.display = 'none';
             document.getElementById('chat-main').style.display = 'flex';
-            
-            const chatID = [currentUser.uid, friendUID].sort().join('_');
+            const chatID = [currentUser.uid, fUID].sort().join('_');
             const box = document.getElementById('chat-box');
             box.innerHTML = "";
-            
-            onChildAdded(ref(db, 'chats/' + chatID), (snap) => {
-                displayMessage(snap.val());
-            });
+            onChildAdded(ref(db, 'chats/' + chatID), (snap) => displayMessage(snap.val()));
         }
 
-        function displayMessage(d) {
-            const box = document.getElementById('chat-box');
-            const isMe = d.sender === currentUser.email;
-            const m = document.createElement('div');
-            m.className = `msg ${isMe ? 'sent' : 'received'}`;
-            
-            if (d.type === 'image') {
-                m.innerHTML = `<img src="${d.url}" class="chat-img">`;
-            } else {
-                m.innerHTML = `
-                    <div class="msg-text">
-                        <strong>${d.translated}</strong><br><small>${d.original}</small>
-                    </div>
-                    ${!isMe ? `<button class="play-btn" onclick="speak('${d.translated.replace(/'/g, "\\'")}', '${d.targetLang}')">🔊</button>` : ''}
-                `;
-            }
-            box.appendChild(m);
-            box.scrollTop = box.scrollHeight;
-            if (!isMe && d.timestamp > Date.now() - 3000) notifySound.play();
-        }
-
-        window.speak = (text, lang) => {
-            const ut = new SpeechSynthesisUtterance(text);
-            ut.lang = lang;
-            window.speechSynthesis.speak(ut);
+        window.goBack = () => {
+            document.getElementById('sidebar').style.display = 'flex';
+            document.getElementById('chat-area').style.display = 'none';
         };
 
-        // --- Voice & Image Actions ---
         const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
         const rec = new Rec();
+        rec.continuous = false;
 
-        const mBtn = document.getElementById('micBtn');
-        mBtn.onmousedown = () => {
+        document.getElementById('micBtn').onmousedown = () => {
             if (!selectedFriend) return;
             const l = document.getElementById('myLang').value;
             rec.lang = l === 'auto' ? '' : l;
             rec.start();
-            isRecording = true;
-            mBtn.classList.add('recording');
+            document.getElementById('micBtn').classList.add('recording');
             startTimer();
         };
-        mBtn.onmouseup = () => { 
-            rec.stop(); 
-            isRecording = false;
-            mBtn.classList.remove('recording'); 
-            stopTimer(); 
+
+        document.getElementById('micBtn').onmouseup = () => {
+            rec.stop();
+            document.getElementById('micBtn').classList.remove('recording');
+            stopTimer();
         };
+
+        // Mobile touch fixes
+        document.getElementById('micBtn').ontouchstart = (e) => { e.preventDefault(); document.getElementById('micBtn').onmousedown(); };
+        document.getElementById('micBtn').ontouchend = () => document.getElementById('micBtn').onmouseup();
 
         rec.onresult = async (e) => {
             const ori = e.results[0][0].transcript;
             const tar = document.getElementById('friendLang').value;
             const res = await fetch(`${scriptURL}?text=${encodeURIComponent(ori)}&target=${tar}`);
             const tra = await res.text();
-            sendData({ sender: currentUser.email, original: ori, translated: tra, targetLang: tar, type: 'text' });
-        };
-
-        // Image Sharing with Compression
-        window.pickImage = () => document.getElementById('imgInput').click();
-        window.uploadImage = async (e) => {
-            const file = e.target.files[0];
-            if (!file || !selectedFriend) return;
-
-            // Simple Compression via Canvas
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = async () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    const scale = 0.6; // 60% compression
-                    canvas.width = img.width * scale;
-                    canvas.height = img.height * scale;
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    canvas.toBlob(async (blob) => {
-                        const path = `chat_images/${Date.now()}_${currentUser.uid}.jpg`;
-                        const snapshot = await uploadBytes(sRef(storage, path), blob);
-                        const url = await getDownloadURL(snapshot.ref);
-                        sendData({ sender: currentUser.email, url: url, type: 'image' });
-                    }, 'image/jpeg', 0.7);
-                };
-            };
-        };
-
-        function sendData(data) {
+            
             const chatID = [currentUser.uid, selectedFriend.uid].sort().join('_');
-            push(ref(db, 'chats/' + chatID), { ...data, timestamp: Date.now() });
+            push(ref(db, 'chats/' + chatID), {
+                sender: currentUser.email,
+                original: ori,
+                translated: tra,
+                targetLang: tar,
+                type: 'text',
+                timestamp: Date.now()
+            });
+        };
+
+        // UI Helpers
+        function displayMessage(d) {
+            const box = document.getElementById('chat-box');
+            const isMe = d.sender === currentUser.email;
+            const m = document.createElement('div');
+            m.className = `msg ${isMe ? 'sent' : 'received'}`;
+            m.innerHTML = d.type === 'image' ? `<img src="${d.url}" class="chat-img">` : 
+                `<strong>${d.translated}</strong><br><small>${d.original}</small> 
+                ${!isMe ? `<button onclick="speak('${d.translated.replace(/'/g, "\\'")}', '${d.targetLang}')">🔊</button>` : ''}`;
+            box.appendChild(m);
+            box.scrollTop = box.scrollHeight;
         }
 
-        function startTimer() {
-            seconds = 0; document.getElementById('timer').style.display = 'block';
-            timerInterval = setInterval(() => {
-                seconds++;
-                let m = Math.floor(seconds/60), s = seconds%60;
-                document.getElementById('timer').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`;
-            }, 1000);
-        }
+        window.speak = (t, l) => { const u = new SpeechSynthesisUtterance(t); u.lang = l; window.speechSynthesis.speak(u); };
+        function startTimer() { seconds = 0; document.getElementById('timer').style.display = 'block'; timerInterval = setInterval(() => { seconds++; let m=Math.floor(seconds/60), s=seconds%60; document.getElementById('timer').innerText = `${m<10?'0'+m:m}:${s<10?'0'+s:s}`; }, 1000); }
         function stopTimer() { clearInterval(timerInterval); document.getElementById('timer').style.display = 'none'; }
     </script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', sans-serif; height: 100vh; background: #e5ddd5; overflow: hidden; }
-        
-        /* Layout */
         #app-container { display: none; height: 100vh; width: 100vw; }
-        #sidebar { width: 300px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        
+        /* Sidebar & Responsive Logic */
+        #sidebar { width: 350px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
         #chat-area { flex: 1; display: flex; flex-direction: column; background: #f0f2f5; }
-
-        /* Auth */
-        #auth-screen { position: fixed; inset: 0; background: #075e54; display: flex; align-items: center; justify-content: center; z-index: 2000; }
-        .auth-card { background: white; padding: 30px; border-radius: 12px; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-        .auth-card input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; }
-        #name-field { display: none; }
-        #name-field.active { display: block; }
-        .auth-card button { width: 100%; padding: 12px; background: #128c7e; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-
-        /* Sidebar User Cards */
-        .side-head { background: #075e54; color: white; padding: 20px; font-size: 20px; font-weight: bold; }
-        #sidebar-list { flex: 1; overflow-y: auto; }
-        .user-card { padding: 15px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: 0.2s; }
-        .user-card:hover { background: #f9f9f9; }
-        .avatar { width: 45px; height: 45px; background: #128c7e; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; }
-
-        /* Chat Window */
-        .chat-head { background: #075e54; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; background: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
         
-        .msg { padding: 10px 14px; border-radius: 8px; max-width: 75%; position: relative; display: flex; align-items: center; gap: 8px; }
-        .sent { background: #dcf8c6; align-self: flex-end; border-top-right-radius: 0; }
-        .received { background: white; align-self: flex-start; border-top-left-radius: 0; }
-        .chat-img { max-width: 100%; border-radius: 8px; }
-        .play-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #075e54; }
+        .side-head { background: #075e54; color: white; padding: 20px; font-weight: bold; font-size: 20px; }
+        .user-card { padding: 15px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+        .avatar { width: 45px; height: 45px; background: #128c7e; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 
-        /* Footer Controls */
-        .chat-foot { background: #f0f0f0; padding: 15px; display: flex; flex-direction: column; align-items: center; border-top: 1px solid #ddd; }
-        #timer { color: #f44336; font-weight: bold; font-size: 18px; margin-bottom: 8px; display: none; }
-        .controls { display: flex; gap: 12px; width: 100%; max-width: 500px; margin-bottom: 15px; }
-        select { flex: 1; padding: 8px; border-radius: 20px; border: 1px solid #ccc; font-size: 13px; }
+        /* Chat Header & Box */
+        .chat-head { background: #075e54; color: white; padding: 12px 20px; display: flex; align-items: center; gap: 10px; }
+        .back-btn { display: none; background: none; border: none; color: white; font-size: 20px; cursor: pointer; }
+        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; background: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
         
-        .action-btns { display: flex; align-items: center; gap: 20px; }
-        #micBtn { width: 65px; height: 65px; border-radius: 50%; background: #128c7e; color: white; border: none; font-size: 28px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-        #micBtn.recording { background: #f44336; transform: scale(1.15); animation: pulse 1.5s infinite; }
-        .img-btn { font-size: 24px; cursor: pointer; color: #555; }
+        .msg { padding: 8px 12px; border-radius: 8px; max-width: 80%; position: relative; font-size: 15px; }
+        .sent { background: #dcf8c6; align-self: flex-end; }
+        .received { background: white; align-self: flex-start; }
 
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(244, 67, 54, 0); } 100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); } }
-        
+        /* Footer */
+        .chat-foot { background: #f0f0f0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .controls { display: flex; gap: 10px; width: 100%; margin-bottom: 10px; }
+        select { flex: 1; padding: 8px; border-radius: 20px; border: 1px solid #ccc; font-size: 12px; }
+        #micBtn { width: 60px; height: 60px; border-radius: 50%; background: #128c7e; color: white; border: none; font-size: 24px; }
+        #micBtn.recording { background: #f44336; animation: pulse 1s infinite; }
+        #timer { color: #f44336; font-weight: bold; display: none; margin-bottom: 5px; }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+        /* Mobile Optimization */
         @media (max-width: 600px) {
-            #sidebar { width: 80px; }
-            .user-card span { display: none; }
-            .avatar { margin: 0 auto; }
+            #sidebar { width: 100%; }
+            #chat-area { display: none; width: 100%; }
+            .back-btn { display: block; }
         }
     </style>
 </head>
 <body>
-
-    <div id="auth-screen">
-        <div class="auth-card">
-            <h2 style="color:#075e54; margin-bottom: 15px;">Gappa Pro</h2>
-            <div id="name-field"><input type="text" id="name" placeholder="Full Name"></div>
-            <input type="email" id="email" placeholder="Email Address">
-            <input type="password" id="pass" placeholder="Password">
-            <button id="auth-btn" onclick="handleAuth()">Login</button>
-            <p onclick="toggleReg()" style="font-size: 12px; color: #075e54; cursor: pointer; margin-top: 15px;">New User? Create Account</p>
+    <div id="auth-screen" style="position:fixed; inset:0; background:#075e54; z-index:1000; display:flex; align-items:center; justify-content:center;">
+        <div style="background:white; padding:30px; border-radius:10px; width:300px; text-align:center;">
+            <h2>Gappa Pro</h2>
+            <div id="name-field" style="display:none;"><input type="text" id="name" placeholder="Full Name" style="width:100%; padding:10px; margin:5px 0;"></div>
+            <input type="email" id="email" placeholder="Email" style="width:100%; padding:10px; margin:5px 0;">
+            <input type="password" id="pass" placeholder="Password" style="width:100%; padding:10px; margin:5px 0;">
+            <button onclick="handleAuth()" id="auth-btn" style="width:100%; padding:10px; background:#128c7e; color:white; border:none; margin-top:10px;">Login</button>
+            <p onclick="document.getElementById('name-field').style.display='block'; document.getElementById('auth-btn').innerText='Register';" style="font-size:12px; color:#075e54; cursor:pointer; margin-top:10px;">New Account</p>
         </div>
     </div>
 
@@ -279,38 +202,23 @@
             <div id="sidebar-list"></div>
         </div>
         <div id="chat-area">
-            <div id="placeholder">Select a friend to start Gappa Pro</div>
-            <div id="chat-main" style="display:none; flex-direction: column; height: 100%;">
+            <div id="placeholder" style="flex:1; display:flex; align-items:center; justify-content:center; color:#888;">Select a friend to start</div>
+            <div id="chat-main" style="display:none; flex-direction:column; height:100%;">
                 <div class="chat-head">
-                    <span id="chat-header-name">Friend Name</span>
-                    <button onclick="signOut(getAuth())" style="background:none; border:none; color:white; cursor:pointer; font-weight:bold;">Logout</button>
+                    <button class="back-btn" onclick="goBack()">⬅</button>
+                    <span id="chat-header-name"></span>
                 </div>
                 <div id="chat-box"></div>
                 <div class="chat-foot">
                     <div id="timer">00:00</div>
                     <div class="controls">
-                        <select id="myLang">
-                            <option value="auto">Auto Detect</option>
-                            <option value="bn-BD">Bengali</option>
-                            <option value="en-US">English</option>
-                            <option value="tl-PH">Filipino</option>
-                        </select>
-                        <select id="friendLang">
-                            <option value="en">To: English</option>
-                            <option value="bn">To: Bengali</option>
-                            <option value="tl">To: Filipino</option>
-                        </select>
+                        <select id="myLang"><option value="auto">Auto</option><option value="bn-BD">Bengali</option><option value="en-US">English</option></select>
+                        <select id="friendLang"><option value="en">To: English</option><option value="bn">To: Bengali</option></select>
                     </div>
-                    <div class="action-btns">
-                        <input type="file" id="imgInput" style="display:none;" accept="image/*" onchange="uploadImage(event)">
-                        <span class="img-btn" onclick="pickImage()">🖼️</span>
-                        <button id="micBtn">🎤</button>
-                        <span class="img-btn" onclick="/* Open Camera logic */">📷</span>
-                    </div>
+                    <button id="micBtn">🎤</button>
                 </div>
             </div>
         </div>
     </div>
-
 </body>
 </html>
